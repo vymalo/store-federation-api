@@ -1,18 +1,44 @@
-# More Help from https://nodejs.org/de/docs/guides/nodejs-docker-webapp/
-FROM node:18-alpine
+FROM node:20-slim AS base
 
-LABEL maintener = Stephane Segning <segning.lambou@bayamsell.com>
+WORKDIR /app
+
+ENV PNPM_HOME="/pnpm"
+
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN corepack enable
+
+COPY . /app
+
+# Use a specific Node.js version
+FROM base AS build
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml ./
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+COPY ./src ./src
+
+COPY ./tsconfig.json ./
+
+RUN pnpm build
+
+# Production stage
+FROM base
 
 ENV NODE_ENV=production
 ENV PORT=3000
 
 WORKDIR /app
 
-COPY ./dist ./dist
-COPY ./package.json yarn.lock ./
+COPY --from=build /app/dist ./dist
 
-RUN yarn --production --non-interactive --silent
+COPY package.json pnpm-lock.yaml ./
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --production --frozen-lockfile
 
 EXPOSE 3000
 
-ENTRYPOINT ["yarn", "start:prod"]
+CMD ["node", "./dist/main.js"]
